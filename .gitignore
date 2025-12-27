@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+myenv/
+venv/
+ENV/
+
+# Models (Large files)
+models/
+*.ckpt
+*.onnx
+*.model
+
+# Logs
+*.log
+app.log
+
+# Settings
+settings.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary
+temp_gigaam/

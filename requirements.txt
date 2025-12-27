@@ -1,0 +1,17 @@
+# Зависимости для проекта голосового распознавания
+# Для видеокарты 1080 Ti используем PyTorch с CUDA 11.8
+
+# дополнительные колёса PyTorch с CUDA 11.8 (для 1080 Ti)
+--extra-index-url https://download.pytorch.org/whl/cu118
+
+torch==2.5.1+cu118
+torchvision==0.20.1+cu118
+torchaudio==2.5.1+cu118
+
+numpy<2.0
+certifi
+sounddevice==0.5.3
+keyboard
+gigaam
+mouse
+sentencepiece
