@@ -103,7 +103,10 @@ class GroqClient:
 
         key = self.key_pool.get_next()
         if not key:
-            raise RuntimeError("No Groq API keys configured")
+            raise RuntimeError(
+                "Нет Groq API ключей. Добавьте ключ во вкладке Groq "
+                "(получить: console.groq.com)"
+            )
         return OpenAI(api_key=key, base_url=GROQ_BASE_URL)
 
     def transcribe(

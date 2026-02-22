@@ -48,6 +48,14 @@ class GroqTab(ttk.Frame):
 
         self._refresh_keys_list()
 
+        self.no_keys_hint = ttk.Label(
+            keys_frame,
+            text="Нет ключей. Получите бесплатный ключ на console.groq.com",
+            foreground="#ff8844",
+        )
+        if not self.key_pool.keys:
+            self.no_keys_hint.pack(fill=tk.X, padx=10, pady=(0, 5))
+
         # --- Models ---
         model_frame = ttk.LabelFrame(self, text="Модели Groq")
         model_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -167,6 +175,7 @@ class GroqTab(ttk.Frame):
             self.key_pool.add_key(key)
             self._refresh_keys_list()
             self._sync_keys_to_settings()
+            self.no_keys_hint.pack_forget()
             self.app.set_status(f"Добавлен ключ ({self.key_pool.count} всего)")
 
     def _remove_key(self):
@@ -178,6 +187,8 @@ class GroqTab(ttk.Frame):
             self.key_pool.remove_key(self.key_pool.keys[idx])
             self._refresh_keys_list()
             self._sync_keys_to_settings()
+            if not self.key_pool.keys:
+                self.no_keys_hint.pack(fill=tk.X, padx=10, pady=(0, 5))
             self.app.set_status(f"Ключ удалён ({self.key_pool.count} осталось)")
 
     def _sync_keys_to_settings(self):

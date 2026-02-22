@@ -184,7 +184,11 @@ def main():
         f"{n}: {'+'.join(hotkey_mgr.get_keys(n))}"
         for n in DEFAULT_HOTKEYS
     )
-    app.set_status(f"Готово | {keys_display}")
+
+    if not groq_keys:
+        app.set_status(f"Готово | Groq не настроен (вкладка Groq) | {keys_display}")
+    else:
+        app.set_status(f"Готово | {keys_display}")
 
     # --- Tray & close behavior ---
     def do_full_quit():
