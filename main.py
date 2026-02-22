@@ -71,6 +71,8 @@ def main():
     from gui.test_tab import TestTab
     from gui.hotkeys_tab import HotkeysTab
     from gui.groq_tab import GroqTab
+    from gui.history_tab import HistoryTab
+    from gui.recording_overlay import RecordingOverlay, play_start_sound, play_stop_sound
     from core.audio_recorder import AudioRecorder
     from core.groq_client import GroqClient, GroqKeyPool
     from core.hotkey_manager import MultiHotkeyManager
@@ -127,6 +129,9 @@ def main():
         logger.error("Failed to load recognizer: %s", e)
         app.set_status(f"Ошибка модели: {e}")
 
+    # --- Recording overlay ---
+    overlay = RecordingOverlay(app)
+
     # --- Audio ---
     recorder = AudioRecorder(samplerate=16000)
 
@@ -159,6 +164,12 @@ def main():
     test_tab = TestTab(app.notebook, app, recorder, recognizer, groq_client, text_utils, MODEL_DIR)
     app.notebook.add(test_tab, text="  Тест  ")
     app.test_tab = test_tab
+    test_tab.overlay = overlay
+
+    history_tab = HistoryTab(app.notebook, app)
+    app.notebook.add(history_tab, text="  История  ")
+    app.history_tab = history_tab
+    test_tab.history_tab = history_tab
 
     # --- Multi-hotkey manager ---
     hotkey_mgr = MultiHotkeyManager()
@@ -167,9 +178,16 @@ def main():
     def on_start():
         recorder.start()
         app.after(0, lambda: app.set_status("Запись..."))
+        if settings.get("sound_feedback", True):
+            play_start_sound()
+        if settings.get("show_recording_overlay", True):
+            app.after(0, overlay.show)
 
     def on_stop(pipeline: str):
         result = recorder.stop()
+        if settings.get("sound_feedback", True):
+            play_stop_sound()
+        app.after(0, overlay.hide)
         if result is None:
             app.after(0, lambda: app.set_status("Нет аудиоданных"))
             return

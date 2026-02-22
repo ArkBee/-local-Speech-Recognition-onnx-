@@ -22,6 +22,11 @@
     "replace_punctuation": true,
     "fuzzy_cutoff": 0.85,
     "min_fuzzy_length": 4,
+    "sound_feedback": true,
+    "show_recording_overlay": true,
+    "custom_replacements": {
+        "мой емейл": "user@example.com"
+    },
     "groq": {
         "keys": [
             "gsk_YOUR_KEY_HERE"

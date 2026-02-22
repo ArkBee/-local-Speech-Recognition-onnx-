@@ -123,6 +123,26 @@ class HotkeysTab(ttk.Frame):
             variable=self.repl_var,
         ).pack(anchor=tk.W, padx=10, pady=5)
 
+        # --- Feedback ---
+        feedback_frame = ttk.LabelFrame(self, text="Обратная связь при записи")
+        feedback_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        self.sound_var = tk.BooleanVar(
+            value=self.app.settings.get("sound_feedback", True)
+        )
+        ttk.Checkbutton(
+            feedback_frame, text="Звуковой сигнал (начало/конец записи)",
+            variable=self.sound_var, command=self._on_feedback_toggle,
+        ).pack(anchor=tk.W, padx=10, pady=(5, 2))
+
+        self.overlay_var = tk.BooleanVar(
+            value=self.app.settings.get("show_recording_overlay", True)
+        )
+        ttk.Checkbutton(
+            feedback_frame, text="Индикатор записи на экране (красная точка)",
+            variable=self.overlay_var, command=self._on_feedback_toggle,
+        ).pack(anchor=tk.W, padx=10, pady=(2, 5))
+
         # --- Autostart ---
         auto_frame = ttk.LabelFrame(self, text="Автозапуск")
         auto_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -203,12 +223,21 @@ class HotkeysTab(ttk.Frame):
         w["capture_label"].configure(text="")
         self.hotkey_manager.start()
 
+    # ---- Feedback ----
+
+    def _on_feedback_toggle(self):
+        self.app.settings["sound_feedback"] = self.sound_var.get()
+        self.app.settings["show_recording_overlay"] = self.overlay_var.get()
+        self.app.save()
+
     # ---- Save / Reset ----
 
     def _save(self):
         self.app.settings["injection_mode"] = self.injection_var.get()
         self.app.settings["injection_delay"] = self.delay_var.get()
         self.app.settings["enable_replacements"] = self.repl_var.get()
+        self.app.settings["sound_feedback"] = self.sound_var.get()
+        self.app.settings["show_recording_overlay"] = self.overlay_var.get()
         self.app.save()
         self.app.set_status("Настройки сохранены")
 
@@ -222,6 +251,8 @@ class HotkeysTab(ttk.Frame):
         self.injection_var.set("clipboard")
         self.delay_var.set(0.3)
         self.repl_var.set(True)
+        self.sound_var.set(True)
+        self.overlay_var.set(True)
         self._save()
         self.hotkey_manager.start()
         self.app.set_status("Все настройки сброшены")

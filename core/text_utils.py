@@ -1,6 +1,6 @@
 import re
 from difflib import get_close_matches
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 WORD_REPLACEMENTS: Dict[str, str] = {
     "вопросительный знак": "?",
@@ -51,11 +51,18 @@ def process_transcription(
     min_fuzzy_length: int = 4,
     replace_punctuation: bool = True,
     collapse_full_repeat: bool = False,
+    custom_replacements: Optional[Dict[str, str]] = None,
 ) -> str:
     if not text:
         return ""
 
     processed = text
+
+    # Apply custom replacements first (user-defined)
+    if custom_replacements:
+        for phrase, replacement in custom_replacements.items():
+            processed = re.compile(re.escape(phrase), re.IGNORECASE).sub(replacement, processed)
+
     for phrase, replacement in WORD_REPLACEMENTS.items():
         processed = re.compile(re.escape(phrase), re.IGNORECASE).sub(replacement, processed)
 

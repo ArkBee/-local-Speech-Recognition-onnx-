@@ -33,6 +33,9 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "replace_punctuation": True,
     "fuzzy_cutoff": 0.85,
     "min_fuzzy_length": 4,
+    "sound_feedback": True,
+    "show_recording_overlay": True,
+    "custom_replacements": {},
     "groq": {
         "keys": [],
         "stt_model": "whisper-large-v3",
@@ -134,6 +137,20 @@ class App(tk.Tk):
         style.configure("TEntry", fieldbackground=field_bg, foreground=fg)
         style.configure("TScale", background=bg, troughcolor=field_bg)
         style.configure("Horizontal.TProgressbar", background=accent, troughcolor=field_bg)
+        style.configure("Level.Horizontal.TProgressbar", background="#44cc44", troughcolor=field_bg)
+
+        # Treeview (history tab)
+        style.configure(
+            "Treeview",
+            background=field_bg, foreground=fg, fieldbackground=field_bg,
+            rowheight=25,
+        )
+        style.configure("Treeview.Heading", background=btn_bg, foreground=fg)
+        style.map(
+            "Treeview",
+            background=[("selected", accent)],
+            foreground=[("selected", "#ffffff")],
+        )
 
         # Recording indicator styles
         style.configure("Recording.TLabel", background=bg, foreground="#ff4444", font=("", 10, "bold"))

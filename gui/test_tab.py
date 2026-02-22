@@ -19,6 +19,9 @@ class TestTab(ttk.Frame):
         self.text_utils = text_utils
         self.model_dir = model_dir
         self._loading_model = False
+        self.overlay = None
+        self.history_tab = None
+        self._level_job = None
         self._build_ui()
 
     def _build_ui(self):
@@ -67,6 +70,12 @@ class TestTab(ttk.Frame):
 
         self.status_label = ttk.Label(ctrl_frame, text="Готово", style="Ready.TLabel")
         self.status_label.pack(side=tk.LEFT, padx=10)
+
+        self.level_bar = ttk.Progressbar(
+            ctrl_frame, style="Level.Horizontal.TProgressbar",
+            maximum=100, mode="determinate",
+        )
+        self.level_bar.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
 
         self.time_label = ttk.Label(ctrl_frame, text="Время: —")
         self.time_label.pack(side=tk.RIGHT)
@@ -139,6 +148,11 @@ class TestTab(ttk.Frame):
             row_toggles, text="Замена пунктуации",
             variable=self.punct_repl_var, command=self._on_repl_toggle,
         ).pack(side=tk.LEFT)
+
+        ttk.Button(
+            row_toggles, text="Свои замены...",
+            command=self._open_custom_replacements,
+        ).pack(side=tk.RIGHT)
 
         row_sliders = ttk.Frame(repl_frame)
         row_sliders.pack(fill=tk.X, padx=10, pady=(2, 5))
@@ -295,12 +309,24 @@ class TestTab(ttk.Frame):
         self.record_btn.configure(text="Стоп")
         self.status_label.configure(text="Запись...", style="Recording.TLabel")
         self.app.set_status("Идёт запись...")
+        self._start_level_poll()
+        if self.overlay and self.app.settings.get("show_recording_overlay", True):
+            self.overlay.show()
+        if self.app.settings.get("sound_feedback", True):
+            from gui.recording_overlay import play_start_sound
+            play_start_sound()
 
     def _stop_recording(self):
         result = self.recorder.stop()
         self.record_btn.configure(text="Записать")
         self.status_label.configure(text="Обработка...", style="Status.TLabel")
         self.app.set_status("Распознавание...")
+        self._stop_level_poll()
+        if self.overlay:
+            self.overlay.hide()
+        if self.app.settings.get("sound_feedback", True):
+            from gui.recording_overlay import play_stop_sound
+            play_stop_sound()
 
         if result is None:
             self.status_label.configure(text="Нет данных", style="Ready.TLabel")
@@ -353,12 +379,14 @@ class TestTab(ttk.Frame):
 
             if self.app.settings.get("enable_replacements", True):
                 from core.text_utils import process_transcription
+                custom_repl = self.app.settings.get("custom_replacements", {})
                 raw = process_transcription(
                     raw,
                     fuzzy_numeric=self.app.settings.get("fuzzy_numeric", True),
                     fuzzy_cutoff=self.app.settings.get("fuzzy_cutoff", 0.85),
                     min_fuzzy_length=self.app.settings.get("min_fuzzy_length", 4),
                     replace_punctuation=self.app.settings.get("replace_punctuation", True),
+                    custom_replacements=custom_repl if custom_repl else None,
                 )
 
             self.after(0, self._show_raw_text, raw, recog_time)
@@ -420,6 +448,11 @@ class TestTab(ttk.Frame):
                 lambda: self.app.set_status(f"{label} за {total:.2f}с"),
             )
 
+            # Add to history
+            final_text = text if text else raw
+            if final_text and self.history_tab:
+                self.after(0, lambda: self.history_tab.add_entry(final_text, pipeline, total))
+
         except Exception as e:
             logger.exception("Recognition error")
             self.after(0, self._show_error, str(e))
@@ -479,3 +512,99 @@ class TestTab(ttk.Frame):
         self.clipboard_append(text)
         self.after(int(delay * 1000), lambda: kb.press_and_release("ctrl+v"))
         self.app.set_status("Вставлено через буфер обмена")
+
+    # ----------------------------------------------------------------
+    # Mic level meter
+    # ----------------------------------------------------------------
+
+    def _start_level_poll(self):
+        self._poll_level()
+
+    def _stop_level_poll(self):
+        if self._level_job:
+            self.after_cancel(self._level_job)
+            self._level_job = None
+        self.level_bar["value"] = 0
+
+    def _poll_level(self):
+        if self.recorder.is_recording:
+            rms = self.recorder.current_rms
+            level = min(100, rms / 80)
+            self.level_bar["value"] = level
+            self._level_job = self.after(50, self._poll_level)
+        else:
+            self.level_bar["value"] = 0
+
+    # ----------------------------------------------------------------
+    # Custom replacements dialog
+    # ----------------------------------------------------------------
+
+    def _open_custom_replacements(self):
+        dialog = _CustomReplacementsDialog(self, self.app)
+        dialog.grab_set()
+        self.wait_window(dialog)
+
+
+class _CustomReplacementsDialog(tk.Toplevel):
+    """Dialog for editing user-defined word replacements."""
+
+    def __init__(self, parent, app):
+        super().__init__(parent)
+        self.app = app
+        self.title("Свои замены")
+        self.geometry("520x420")
+        self.configure(bg="#1e1e1e")
+        self.transient(parent)
+        self.minsize(400, 300)
+
+        ttk.Label(
+            self,
+            text="Формат: фраза = замена (по одной на строку)",
+        ).pack(anchor=tk.W, padx=15, pady=(15, 2))
+
+        ttk.Label(
+            self,
+            text="Примеры:  мой емейл = user@mail.com  |  подпись = С уважением, Иван",
+            foreground="#888888",
+        ).pack(anchor=tk.W, padx=15, pady=(0, 8))
+
+        self.text = tk.Text(
+            self, wrap=tk.WORD,
+            bg="#2d2d2d", fg="#d4d4d4", insertbackground="#d4d4d4",
+            selectbackground="#264f78", font=("Consolas", 11),
+        )
+        self.text.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 10))
+
+        # Load existing replacements
+        custom = self.app.settings.get("custom_replacements", {})
+        for word, repl in custom.items():
+            self.text.insert(tk.END, f"{word} = {repl}\n")
+
+        btn_frame = ttk.Frame(self)
+        btn_frame.pack(fill=tk.X, padx=15, pady=(0, 15))
+
+        ttk.Button(btn_frame, text="Сохранить", command=self._save).pack(
+            side=tk.LEFT, padx=(0, 10)
+        )
+        ttk.Button(btn_frame, text="Отмена", command=self.destroy).pack(side=tk.LEFT)
+
+        count = len(custom)
+        self.count_label = ttk.Label(btn_frame, text=f"{count} замен")
+        self.count_label.pack(side=tk.RIGHT)
+
+    def _save(self):
+        content = self.text.get("1.0", tk.END)
+        custom = {}
+        for line in content.strip().splitlines():
+            line = line.strip()
+            if not line or "=" not in line:
+                continue
+            parts = line.split("=", 1)
+            word = parts[0].strip()
+            repl = parts[1].strip()
+            if word and repl:
+                custom[word] = repl
+        self.app.settings["custom_replacements"] = custom
+        self.app.save()
+        self.app.set_status(f"Сохранено {len(custom)} своих замен")
+        self.destroy()

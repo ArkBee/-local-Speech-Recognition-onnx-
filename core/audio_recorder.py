@@ -38,12 +38,14 @@ class AudioRecorder:
         self._buffer: deque = deque()
         self._recording = False
         self._lock = threading.Lock()
+        self._current_rms: float = 0.0
 
     def _callback(self, indata: np.ndarray, frames: int, time_info, status):
         if status:
             logger.warning("sounddevice status: %s", status)
         if self._recording:
             self._buffer.append(indata.copy())
+            self._current_rms = float(np.sqrt(np.mean(indata.astype(np.float32) ** 2)))
 
     def start(self):
         with self._lock:
@@ -87,3 +89,7 @@ class AudioRecorder:
     @property
     def is_recording(self) -> bool:
         return self._recording
+
+    @property
+    def current_rms(self) -> float:
+        return self._current_rms
