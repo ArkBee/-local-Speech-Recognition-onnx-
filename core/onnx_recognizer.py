@@ -12,7 +12,6 @@ try:
 except ImportError:
     spm = None
 
-
 SAMPLE_RATE = 16000
 N_FFT = 512
 WIN_LENGTH = 400
@@ -22,39 +21,9 @@ MAX_LETTERS_PER_FRAME = 10
 PRED_HIDDEN = 320
 BLANK_IDX = 33
 VOCAB = (
-    " ",
-    "а",
-    "б",
-    "в",
-    "г",
-    "д",
-    "е",
-    "ж",
-    "з",
-    "и",
-    "й",
-    "к",
-    "л",
-    "м",
-    "н",
-    "о",
-    "п",
-    "р",
-    "с",
-    "т",
-    "у",
-    "ф",
-    "х",
-    "ц",
-    "ч",
-    "ш",
-    "щ",
-    "ъ",
-    "ы",
-    "ь",
-    "э",
-    "ю",
-    "я",
+    " ", "а", "б", "в", "г", "д", "е", "ж", "з", "и", "й",
+    "к", "л", "м", "н", "о", "п", "р", "с", "т", "у", "ф",
+    "х", "ц", "ч", "ш", "щ", "ъ", "ы", "ь", "э", "ю", "я",
 )
 
 
@@ -86,20 +55,19 @@ class MelFeatureExtractor:
         hz_points = _mel_to_hz(mel_points)
         bin_indices = np.floor((self.n_fft + 1) * hz_points / self.sample_rate).astype(int)
         filter_bank = np.zeros((self.n_mels, fft_bins), dtype=np.float32)
-
         for m in range(1, self.n_mels + 1):
             left, center, right = bin_indices[m - 1 : m + 2]
             left = max(left, 0)
             if right <= left:
                 continue
             for k in range(left, center):
-                denominator = center - left
-                if denominator != 0:
-                    filter_bank[m - 1, k] = (k - left) / denominator
+                d = center - left
+                if d != 0:
+                    filter_bank[m - 1, k] = (k - left) / d
             for k in range(center, right):
-                denominator = right - center
-                if denominator != 0:
-                    filter_bank[m - 1, k] = (right - k) / denominator
+                d = right - center
+                if d != 0:
+                    filter_bank[m - 1, k] = (right - k) / d
         return filter_bank
 
     def _stft(self, audio: np.ndarray) -> np.ndarray:
@@ -108,17 +76,14 @@ class MelFeatureExtractor:
         total_length = audio_padded.shape[0]
         step = self.hop_length
         frames: List[np.ndarray] = []
-
         for start in range(0, total_length - self.win_length + 1, step):
             frame = audio_padded[start : start + self.win_length]
             spectrum = np.fft.rfft(frame * self.window, n=self.n_fft)
             frames.append(spectrum)
-
         if not frames:
             frame = audio_padded[: self.win_length]
             spectrum = np.fft.rfft(frame * self.window, n=self.n_fft)
             frames.append(spectrum)
-
         return np.stack(frames, axis=0)
 
     def __call__(self, audio: np.ndarray) -> np.ndarray:
@@ -126,15 +91,13 @@ class MelFeatureExtractor:
             audio = audio.squeeze()
         if audio.size == 0:
             return np.zeros((self.n_mels, 0), dtype=np.float32)
-
         audio = np.asarray(audio)
         if np.issubdtype(audio.dtype, np.integer):
             audio = audio.astype(np.float32) / np.iinfo(audio.dtype).max
         else:
             audio = audio.astype(np.float32)
-
         stft_matrix = self._stft(audio)
-        power = (np.abs(stft_matrix) ** 2).T  # shape (freq_bins, frames)
+        power = (np.abs(stft_matrix) ** 2).T
         mel_spec = np.dot(self.filter_bank, power)
         mel_spec = np.maximum(mel_spec, 1e-9)
         log_mel = np.log(mel_spec)
@@ -145,64 +108,72 @@ class OnnxGigaAMTranscriber:
     def __init__(
         self,
         model_dir: Path | str = Path("models") / "onnx",
-        model_type: str = "rnnt",
-        model_version: str = "v2",
+        model_type: str = "v3_rnnt",
         prefer_cuda: bool = True,
     ) -> None:
         self.model_dir = Path(model_dir)
         self.full_model_name = model_type
+
+        # Parse "v3_rnnt" -> version="v3", type="rnnt"
         if "_" in model_type and model_type.startswith("v"):
-            version, base = model_type.split("_", 1)
-            model_version = version
-            model_type = base
-        self.model_type = model_type
-        self.model_version = model_version
+            parts = model_type.split("_", 1)
+            self.model_version = parts[0]
+            self.model_type = parts[1]
+        else:
+            self.model_version = "v3"
+            self.model_type = model_type
+
         self.feature_extractor = MelFeatureExtractor()
 
-        # Load tokenizer if available (for e2e models)
+        # Load tokenizer / vocabulary (for e2e models)
         self.sp_processor = None
+        self.vocab_list = None
         self.vocab_size = 0
+
         tokenizer_path = self.model_dir / f"{self.full_model_name}_tokenizer.model"
+        vocab_path = self.model_dir / f"{self.full_model_name}_vocab.txt"
+
         if tokenizer_path.exists():
             if spm is None:
-                raise ImportError("sentencepiece is required for this model. Install it with: pip install sentencepiece")
+                raise ImportError("sentencepiece is required for this model")
             self.sp_processor = spm.SentencePieceProcessor()
             self.sp_processor.load(str(tokenizer_path))
             self.vocab_size = self.sp_processor.get_piece_size()
-            import logging
-            logging.getLogger(__name__).info(f"Loaded SentencePiece tokenizer with vocab size {self.vocab_size}")
+        elif vocab_path.exists():
+            with open(vocab_path, "r", encoding="utf-8") as f:
+                self.vocab_list = [line.rstrip("\n") for line in f]
+            self.vocab_size = len(self.vocab_list)
+
+        self.is_ctc = self.model_type.endswith("ctc")
 
         providers: List[str] = []
         available = ort.get_available_providers()
-        if prefer_cuda and "CUDAExecutionProvider" in available:
-            providers.append("CUDAExecutionProvider")
+        if prefer_cuda:
+            if "CUDAExecutionProvider" in available:
+                providers.append("CUDAExecutionProvider")
+            elif "DmlExecutionProvider" in available:
+                providers.append("DmlExecutionProvider")
         providers.append("CPUExecutionProvider")
-        self.providers = providers
 
-        if self.model_type == "ctc":
-            encoder_path = self.model_dir / f"{self.model_version}_{self.model_type}.onnx"
-            if not encoder_path.exists():
-                raise FileNotFoundError(
-                    f"ONNX model '{encoder_path}' not found. Run export_gigaam_onnx.py first."
-                )
-            self.encoder = ort.InferenceSession(str(encoder_path), providers=providers)
+        if self.is_ctc:
+            ctc_path = self.model_dir / f"{self.full_model_name}.onnx"
+            if not ctc_path.exists():
+                raise FileNotFoundError(f"ONNX model not found: {ctc_path}")
+            self.encoder = ort.InferenceSession(str(ctc_path), providers=providers)
             self.decoder = None
             self.joint = None
         else:
-            base = self.model_dir / f"{self.model_version}_{self.model_type}"
+            base = self.model_dir / self.full_model_name
             encoder_path = base.with_name(base.name + "_encoder.onnx")
             decoder_path = base.with_name(base.name + "_decoder.onnx")
             joint_path = base.with_name(base.name + "_joint.onnx")
             for path in (encoder_path, decoder_path, joint_path):
                 if not path.exists():
-                    raise FileNotFoundError(
-                        f"ONNX model '{path}' not found. Run export_gigaam_onnx.py first."
-                    )
+                    raise FileNotFoundError(f"ONNX model not found: {path}")
             self.encoder = ort.InferenceSession(str(encoder_path), providers=providers)
             self.decoder = ort.InferenceSession(str(decoder_path), providers=providers)
             self.joint = ort.InferenceSession(str(joint_path), providers=providers)
 
-        # Update providers to actual ones used by the session
         self.providers = self.encoder.get_providers()
 
         self.encoder_inputs = self.encoder.get_inputs()
@@ -211,24 +182,40 @@ class OnnxGigaAMTranscriber:
         self.decoder_outputs = self.decoder.get_outputs() if self.decoder else []
         self.joint_inputs = self.joint.get_inputs() if self.joint else []
         self.joint_outputs = self.joint.get_outputs() if self.joint else []
-        
-        # Determine blank ID from joint model output shape
-        if self.joint:
+
+        if self.is_ctc:
+            out_shape = self.encoder_outputs[0].shape
+            if out_shape and isinstance(out_shape[-1], int):
+                self.blank_id = out_shape[-1] - 1
+            elif self.vocab_list:
+                self.blank_id = len(self.vocab_list)
+            else:
+                self.blank_id = BLANK_IDX
+        elif self.joint:
             self.blank_id = self.joint_outputs[0].shape[-1] - 1
         else:
             self.blank_id = BLANK_IDX
 
+    def _decode_tokens(self, token_ids: List[int]) -> str:
+        """Decode token IDs to text using available vocabulary."""
+        if self.sp_processor:
+            valid = [t for t in token_ids if t < self.vocab_size]
+            return self.sp_processor.decode(valid)
+        if self.vocab_list:
+            pieces = [self.vocab_list[t] for t in token_ids if t < len(self.vocab_list)]
+            text = "".join(pieces)
+            return text.replace("\u2581", " ").strip()
+        return "".join(VOCAB[t] for t in token_ids if t < len(VOCAB))
+
     def transcribe(self, audio: np.ndarray, sample_rate: int) -> str:
         if sample_rate != SAMPLE_RATE:
-            raise ValueError(
-                f"Expected audio sampled at {SAMPLE_RATE} Hz, got {sample_rate} Hz."
-            )
+            raise ValueError(f"Expected {SAMPLE_RATE} Hz, got {sample_rate} Hz")
 
         features = self.feature_extractor(audio)
         if features.shape[1] == 0:
             return ""
 
-        features = features[np.newaxis, :, :]  # (1, n_mels, frames)
+        features = features[np.newaxis, :, :]
         lengths = np.array([features.shape[-1]], dtype=np.int64)
 
         enc_inputs = {
@@ -239,25 +226,23 @@ class OnnxGigaAMTranscriber:
             [out.name for out in self.encoder_outputs], enc_inputs
         )[0]
 
-        if self.model_type == "ctc":
+        if self.is_ctc:
             logits = enc_features.argmax(axis=1)[0]
             tokens: List[int] = []
-            prev = BLANK_IDX
+            prev = self.blank_id
             for tok in logits:
-                if (tok != prev or prev == BLANK_IDX) and tok != BLANK_IDX:
-                    tokens.append(int(tok))
+                tok = int(tok)
+                if (tok != prev or prev == self.blank_id) and tok != self.blank_id:
+                    tokens.append(tok)
                 prev = tok
-            
-            if self.sp_processor:
-                return self.sp_processor.decode(tokens)
-            return "".join(VOCAB[tok] for tok in tokens)
+            return self._decode_tokens(tokens)
 
         # RNNT decoding
         if self.decoder is None or self.joint is None:
-            raise RuntimeError("RNNT decoding requires decoder and joint sessions to be initialized.")
+            raise RuntimeError("RNNT decoding requires decoder and joint sessions")
 
         token_ids: List[int] = []
-        prev_token: int = 0 # Start with token 0 as per gigaam/decoding.py
+        prev_token: int = 0
         pred_states = [
             np.zeros((1, 1, PRED_HIDDEN), dtype=np.float32),
             np.zeros((1, 1, PRED_HIDDEN), dtype=np.float32),
@@ -294,8 +279,4 @@ class OnnxGigaAMTranscriber:
                 else:
                     break
 
-        if self.sp_processor:
-            # Filter out tokens that are out of range for the tokenizer
-            valid_tokens = [t for t in token_ids if t < self.vocab_size]
-            return self.sp_processor.decode(valid_tokens)
-        return "".join(VOCAB[tok] for tok in token_ids if tok < len(VOCAB))
+        return self._decode_tokens(token_ids)

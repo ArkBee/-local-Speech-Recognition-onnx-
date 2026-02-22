@@ -1,0 +1,31 @@
+{
+    "model": "v3_rnnt",
+    "hotkeys": {
+        "raw": [
+            "ctrl",
+            "alt"
+        ],
+        "punctuation": [
+            "ctrl",
+            "shift"
+        ],
+        "translate": [
+            "ctrl",
+            "shift",
+            "alt"
+        ]
+    },
+    "injection_mode": "clipboard",
+    "injection_delay": 0.3,
+    "enable_replacements": true,
+    "groq": {
+        "keys": [
+            "gsk_YOUR_KEY_HERE"
+        ],
+        "stt_model": "whisper-large-v3",
+        "text_model": "meta-llama/llama-4-scout-17b-16e-instruct",
+        "punctuation_prompt": "Добавь пунктуацию к следующему русскому тексту. Верни только исправленный текст без пояснений.",
+        "translation_prompt": "Переведи следующий текст на {language}. Верни только перевод без пояснений.",
+        "target_language": "English"
+    }
+}

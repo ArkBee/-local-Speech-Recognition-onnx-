@@ -7,22 +7,26 @@ myenv/
 venv/
 ENV/
 
-# Models (Large files)
+# Models (large ONNX files)
 models/
-*.ckpt
 *.onnx
 *.model
 
 # Logs
 *.log
-app.log
 
-# Settings
+# Settings (contains API keys)
 settings.json
 
 # OS
 .DS_Store
 Thumbs.db
+*.lnk
 
-# Temporary
-temp_gigaam/
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Legacy
+trt_cache/

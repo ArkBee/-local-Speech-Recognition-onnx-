@@ -1,72 +1,108 @@
-# Local Voice Recognition (GigaAM v3)
+# Local Speech Recognition (GigaAM v3 ONNX + Groq)
 
-Этот проект предоставляет возможность локального распознавания речи с использованием моделей **GigaAM v3** от SberDevices, оптимизированных для работы через **ONNX Runtime**.
+Локальное распознавание речи на **GigaAM v3** (ONNX Runtime) с GUI, интеграцией **Groq API** для пунктуации и перевода, и вводом текста в любое окно через буфер обмена.
 
-Проект специально настроен для работы на видеокартах серии **NVIDIA GTX 1080 Ti** (и других с поддержкой CUDA 11.8).
+## Возможности
 
-## Особенности
-- **Высокая скорость**: Использование ONNX Runtime и обработка аудио в оперативной памяти.
-- **GigaAM v3**: Поддержка новейших моделей, включая `v3_e2e_rnnt` с автоматической пунктуацией.
-- **Удобство**: Ввод текста напрямую в активное окно (эмуляция клавиатуры).
-- **Гибкость**: Переключение моделей и режимов замены текста "на лету".
+- **Локальное распознавание** — GigaAM v3 через ONNX Runtime (DirectML / CUDA / CPU)
+- **Облачное распознавание** — Groq Whisper Large V3
+- **Пунктуация** — Groq Llama 4 Scout добавляет знаки препинания к распознанному тексту
+- **Перевод** — Groq Llama 4 Scout переводит на любой язык
+- **Горячие клавиши** — 3 режима: сырой текст / +пунктуация / +перевод (hold-to-record)
+- **Безопасный ввод** — вставка через буфер обмена + Ctrl+V (без посимвольного набора)
+- **4 модели** — v3 RNNT, v3 CTC, v3 E2E RNNT, v3 E2E CTC (переключение в GUI)
+- **Автозагрузка моделей** — скачивание ONNX с HuggingFace при первом запуске
+- **Системный трей** — сворачивание в трей, автозапуск с Windows
+
+## Структура
+
+```
+├── main.py                  # Точка входа
+├── settings.json            # Настройки (создаётся при первом запуске)
+├── core/
+│   ├── audio_recorder.py    # Запись аудио (sounddevice)
+│   ├── onnx_recognizer.py   # GigaAM v3 ONNX инференс
+│   ├── groq_client.py       # Groq API (Whisper STT + Llama 4)
+│   ├── hotkey_manager.py    # Глобальные горячие клавиши
+│   ├── text_utils.py        # Замены слов → цифры/символы
+│   └── model_downloader.py  # Скачивание моделей с HuggingFace
+├── gui/
+│   ├── app.py               # Главное окно (tkinter, тёмная тема)
+│   ├── test_tab.py          # Тестовая панель распознавания
+│   ├── hotkeys_tab.py       # Настройка горячих клавиш
+│   └── groq_tab.py          # Настройки Groq (ключи, промпты)
+└── models/onnx/             # ONNX модели (скачиваются автоматически)
+```
 
 ## Установка
 
-1. **Клонируйте репозиторий**:
-   ```bash
-   git clone https://github.com/ArkBee/local_input.git
-   cd local_input
-   ```
-
-2. **Создайте виртуальное окружение и активируйте его**:
-   ```bash
-   python -m venv .venv
-   .venv\Scripts\activate
-   ```
-
-3. **Установите зависимости**:
-   Для корректной работы на GTX 1080 Ti используется PyTorch с CUDA 11.8:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Обновите пакет GigaAM**:
-   Для поддержки v3 моделей установите последнюю версию из GitHub:
-   ```bash
-   pip install --upgrade --no-deps git+https://github.com/salute-developers/GigaAM.git
-   ```
-
-## Подготовка моделей (Экспорт в ONNX)
-
-Перед первым запуском необходимо экспортировать модели в формат ONNX. Это делается один раз:
-
 ```bash
-# Экспорт стандартной модели
-python export_gigaam_onnx.py --model v3_rnnt
-
-# Экспорт модели с пунктуацией
-python export_gigaam_onnx.py --model v3_e2e_rnnt
+git clone https://github.com/ArkBee/-local-Speech-Recognition-onnx-.git
+cd -local-Speech-Recognition-onnx-
 ```
-Модели будут сохранены в папку `models/onnx/`.
+
+**Быстрая установка (Windows):**
+```bash
+setup.bat
+```
+
+**Ручная установка:**
+```bash
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+```
 
 ## Запуск
 
 ```bash
-python start.py
+run.bat
 ```
 
-## Управление (Горячие клавиши)
+Или вручную:
+```bash
+.venv\Scripts\python main.py
+```
 
-- **`Ctrl + Alt`** (по умолчанию) — **Запись голоса**. Удерживайте для записи, отпустите для распознавания.
-- **`Ctrl + Shift + Alt + M`** — **Смена модели** (переключение между `v3_rnnt` и `v3_e2e_rnnt`).
-- **`Ctrl + Shift + Alt + R`** — **Вкл/Выкл замены** (цифры "два" -> "2", знаки препинания).
-- **`Ctrl + Shift + Alt + L`** — **Перезагрузка конфига** хоткеев из `hotkey_config.txt`.
+При первом запуске модели скачаются автоматически с HuggingFace (~500 МБ для RNNT).
 
-## Настройка GPU (GTX 1080 Ti)
+## Настройка
 
-Если в логах появляется ошибка `LoadLibrary failed with error 126` при загрузке CUDA:
-1. Скачайте `zlibwapi.dll` (из состава NVIDIA ZLib).
-2. Положите его в `C:\Windows\System32` или в папку `.venv\Lib\site-packages\onnxruntime\capi`.
+Скопируйте `settings.example.json` в `settings.json` и укажите свои Groq API ключи:
 
-## Логирование
-Все события и результаты распознавания записываются в файл `app.log`.
+```json
+{
+    "groq": {
+        "keys": ["gsk_YOUR_KEY_HERE"]
+    }
+}
+```
+
+Получить ключ: [console.groq.com](https://console.groq.com)
+
+## Горячие клавиши (по умолчанию)
+
+| Комбинация | Режим |
+|---|---|
+| `Ctrl + Alt` | Распознавание (сырой текст) |
+| `Ctrl + Shift` | Распознавание + пунктуация (Groq) |
+| `Ctrl + Shift + Alt` | Распознавание + перевод (Groq) |
+
+Удерживайте комбинацию для записи, отпустите для обработки. Все клавиши настраиваются в GUI.
+
+## GPU ускорение
+
+Поддерживается автоматически через приоритет провайдеров:
+1. **CUDA** (NVIDIA + CUDA Toolkit)
+2. **DirectML** (любая видеокарта с DirectX 12)
+3. **CPU** (fallback)
+
+Для DirectML достаточно установить `onnxruntime-directml` (уже в requirements.txt).
+
+## Зависимости
+
+- Python 3.10+
+- onnxruntime-directml
+- sounddevice, numpy, sentencepiece
+- keyboard (глобальные хоткеи)
+- openai (Groq API), huggingface_hub
+- pystray, Pillow (системный трей)
