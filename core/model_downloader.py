@@ -84,8 +84,21 @@ def download_models(
             import shutil
             shutil.copy2(cached, str(dest))
             logger.info("Downloaded: %s -> %s", filename, dest)
+        except OSError as e:
+            if "getaddrinfo" in str(e) or "Errno 11001" in str(e):
+                logger.error("No internet connection: %s", e)
+            else:
+                logger.error("Network error downloading %s: %s", filename, e)
+            return False
         except Exception as e:
-            logger.error("Failed to download %s: %s", filename, e)
+            error_msg = str(e).lower()
+            if any(w in error_msg for w in ("connect", "timeout", "network", "resolve")):
+                logger.error(
+                    "Нет подключения к интернету. "
+                    "Проверьте сеть и перезапустите приложение. (%s)", e
+                )
+            else:
+                logger.error("Failed to download %s: %s", filename, e)
             return False
 
         if progress_callback:

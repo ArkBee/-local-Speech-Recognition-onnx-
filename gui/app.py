@@ -40,7 +40,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
 }
 
 
-def load_settings() -> Dict[str, Any]:
+def load_settings() -> tuple:
+    """Load settings, returns (settings_dict, is_first_run)."""
     if SETTINGS_FILE.exists():
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
@@ -49,10 +50,10 @@ def load_settings() -> Dict[str, Any]:
             merged = {**DEFAULT_SETTINGS, **saved}
             merged["groq"] = {**DEFAULT_SETTINGS["groq"], **saved.get("groq", {})}
             merged["hotkeys"] = {**DEFAULT_SETTINGS["hotkeys"], **saved.get("hotkeys", {})}
-            return merged
+            return merged, False
         except Exception as e:
             logger.error("Failed to load settings: %s", e)
-    return dict(DEFAULT_SETTINGS)
+    return dict(DEFAULT_SETTINGS), True
 
 
 def save_settings(settings: Dict[str, Any]):
@@ -70,7 +71,7 @@ class App(tk.Tk):
         self.geometry("850x650")
         self.minsize(700, 550)
 
-        self.settings = load_settings()
+        self.settings, self.is_first_run = load_settings()
 
         self._apply_dark_theme()
 

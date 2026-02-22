@@ -100,8 +100,12 @@ def main():
             else:
                 from tkinter import messagebox
                 messagebox.showerror(
-                    "Ошибка",
-                    f"Не удалось скачать модели {model_type}.\npip install huggingface_hub",
+                    "Ошибка скачивания",
+                    f"Не удалось скачать модели {model_type}.\n\n"
+                    "Возможные причины:\n"
+                    "- Нет подключения к интернету\n"
+                    "- Проблемы с доступом к huggingface.co\n\n"
+                    "Проверьте сеть и перезапустите приложение.",
                     parent=app,
                 )
                 sys.exit(1)
@@ -123,9 +127,28 @@ def main():
         logger.error("Failed to load recognizer: %s", e)
         app.set_status(f"Ошибка модели: {e}")
 
-    # --- Audio & Groq ---
+    # --- Audio ---
     recorder = AudioRecorder(samplerate=16000)
 
+    mic_ok = True
+    try:
+        import sounddevice as sd
+        sd.query_devices(kind="input")
+    except sd.PortAudioError:
+        mic_ok = False
+        from tkinter import messagebox
+        messagebox.showwarning(
+            "Микрофон",
+            "Микрофон не найден!\n\n"
+            "Подключите микрофон и перезапустите приложение.\n"
+            "Без микрофона запись голоса работать не будет.",
+            parent=app,
+        )
+        logger.warning("No input audio device found")
+    except Exception as e:
+        logger.warning("Could not check audio devices: %s", e)
+
+    # --- Groq ---
     groq_keys = settings.get("groq", {}).get("keys", [])
     key_pool = GroqKeyPool(groq_keys)
     groq_client = GroqClient(key_pool)
@@ -178,7 +201,21 @@ def main():
     app.groq_tab = groq_tab
 
     # --- Start hotkeys ---
-    hotkey_mgr.start()
+    try:
+        hotkey_mgr.start()
+    except Exception as e:
+        from tkinter import messagebox
+        logger.error("Failed to start hotkeys: %s", e)
+        messagebox.showwarning(
+            "Горячие клавиши",
+            "Не удалось запустить горячие клавиши.\n\n"
+            "Возможные причины:\n"
+            "- Нужны права администратора\n"
+            "- Другая программа блокирует доступ\n\n"
+            "Попробуйте запустить от имени администратора.\n"
+            "Запись через кнопку в интерфейсе всё равно будет работать.",
+            parent=app,
+        )
 
     keys_display = " | ".join(
         f"{n}: {'+'.join(hotkey_mgr.get_keys(n))}"
@@ -189,6 +226,24 @@ def main():
         app.set_status(f"Готово | Groq не настроен (вкладка Groq) | {keys_display}")
     else:
         app.set_status(f"Готово | {keys_display}")
+
+    # --- First launch guide ---
+    if app.is_first_run:
+        app.save()  # create settings.json with defaults
+        from tkinter import messagebox
+        messagebox.showinfo(
+            "Добро пожаловать!",
+            "Как пользоваться:\n\n"
+            "1. Удерживайте горячие клавиши для записи голоса,\n"
+            "   отпустите для распознавания\n\n"
+            f"   {keys_display}\n\n"
+            "2. Текст автоматически вставится в активное окно\n\n"
+            "3. Для пунктуации и перевода (Groq) добавьте\n"
+            "   бесплатный API ключ во вкладке Groq\n"
+            "   (console.groq.com)\n\n"
+            "4. Кнопка X сворачивает в трей, а не закрывает",
+            parent=app,
+        )
 
     # --- Tray & close behavior ---
     def do_full_quit():
