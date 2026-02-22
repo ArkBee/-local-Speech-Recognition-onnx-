@@ -109,6 +109,68 @@ class TestTab(ttk.Frame):
         self.groq_time_label = ttk.Label(proc_frame, text="Groq: —")
         self.groq_time_label.pack(side=tk.RIGHT)
 
+        # --- Text processing settings ---
+        repl_frame = ttk.LabelFrame(self, text="Настройки замен")
+        repl_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        row_toggles = ttk.Frame(repl_frame)
+        row_toggles.pack(fill=tk.X, padx=10, pady=(5, 2))
+
+        self.enable_repl_var = tk.BooleanVar(
+            value=self.app.settings.get("enable_replacements", True)
+        )
+        ttk.Checkbutton(
+            row_toggles, text="Замены слов (цифры, символы)",
+            variable=self.enable_repl_var, command=self._on_repl_toggle,
+        ).pack(side=tk.LEFT, padx=(0, 15))
+
+        self.fuzzy_var = tk.BooleanVar(
+            value=self.app.settings.get("fuzzy_numeric", True)
+        )
+        ttk.Checkbutton(
+            row_toggles, text="Нечёткий поиск чисел",
+            variable=self.fuzzy_var, command=self._on_repl_toggle,
+        ).pack(side=tk.LEFT, padx=(0, 15))
+
+        self.punct_repl_var = tk.BooleanVar(
+            value=self.app.settings.get("replace_punctuation", True)
+        )
+        ttk.Checkbutton(
+            row_toggles, text="Замена пунктуации",
+            variable=self.punct_repl_var, command=self._on_repl_toggle,
+        ).pack(side=tk.LEFT)
+
+        row_sliders = ttk.Frame(repl_frame)
+        row_sliders.pack(fill=tk.X, padx=10, pady=(2, 5))
+
+        ttk.Label(row_sliders, text="Мин. длина слова:").pack(side=tk.LEFT, padx=(0, 5))
+        self.min_len_var = tk.IntVar(
+            value=self.app.settings.get("min_fuzzy_length", 4)
+        )
+        self.min_len_label = ttk.Label(row_sliders, text=str(self.min_len_var.get()), width=2)
+        min_len_scale = ttk.Scale(
+            row_sliders, from_=2, to=7, variable=self.min_len_var,
+            orient=tk.HORIZONTAL, length=100,
+            command=lambda v: self._on_slider_change(),
+        )
+        min_len_scale.pack(side=tk.LEFT, padx=(0, 2))
+        self.min_len_label.pack(side=tk.LEFT, padx=(0, 20))
+
+        ttk.Label(row_sliders, text="Точность:").pack(side=tk.LEFT, padx=(0, 5))
+        self.cutoff_var = tk.DoubleVar(
+            value=self.app.settings.get("fuzzy_cutoff", 0.85)
+        )
+        self.cutoff_label = ttk.Label(
+            row_sliders, text=f"{self.cutoff_var.get():.2f}", width=4
+        )
+        cutoff_scale = ttk.Scale(
+            row_sliders, from_=0.70, to=1.00, variable=self.cutoff_var,
+            orient=tk.HORIZONTAL, length=100,
+            command=lambda v: self._on_slider_change(),
+        )
+        cutoff_scale.pack(side=tk.LEFT, padx=(0, 2))
+        self.cutoff_label.pack(side=tk.LEFT)
+
         # --- Processed text ---
         proc_text_frame = ttk.LabelFrame(self, text="Обработанный текст (Groq)")
         proc_text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -130,6 +192,25 @@ class TestTab(ttk.Frame):
         ttk.Button(
             btn_frame, text="Вставить в активное окно", command=self._paste_to_window
         ).pack(side=tk.LEFT)
+
+    # ----------------------------------------------------------------
+    # Text processing settings
+    # ----------------------------------------------------------------
+
+    def _on_repl_toggle(self):
+        self.app.settings["enable_replacements"] = self.enable_repl_var.get()
+        self.app.settings["fuzzy_numeric"] = self.fuzzy_var.get()
+        self.app.settings["replace_punctuation"] = self.punct_repl_var.get()
+        self.app.save()
+
+    def _on_slider_change(self):
+        val_len = self.min_len_var.get()
+        val_cutoff = self.cutoff_var.get()
+        self.min_len_label.configure(text=str(val_len))
+        self.cutoff_label.configure(text=f"{val_cutoff:.2f}")
+        self.app.settings["min_fuzzy_length"] = val_len
+        self.app.settings["fuzzy_cutoff"] = round(val_cutoff, 2)
+        self.app.save()
 
     # ----------------------------------------------------------------
     # Model switching
@@ -272,7 +353,13 @@ class TestTab(ttk.Frame):
 
             if self.app.settings.get("enable_replacements", True):
                 from core.text_utils import process_transcription
-                raw = process_transcription(raw, fuzzy_numeric=True)
+                raw = process_transcription(
+                    raw,
+                    fuzzy_numeric=self.app.settings.get("fuzzy_numeric", True),
+                    fuzzy_cutoff=self.app.settings.get("fuzzy_cutoff", 0.85),
+                    min_fuzzy_length=self.app.settings.get("min_fuzzy_length", 4),
+                    replace_punctuation=self.app.settings.get("replace_punctuation", True),
+                )
 
             self.after(0, self._show_raw_text, raw, recog_time)
 

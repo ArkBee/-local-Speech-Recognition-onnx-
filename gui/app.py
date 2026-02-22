@@ -29,6 +29,10 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "injection_mode": "clipboard",
     "injection_delay": 0.3,
     "enable_replacements": True,
+    "fuzzy_numeric": True,
+    "replace_punctuation": True,
+    "fuzzy_cutoff": 0.85,
+    "min_fuzzy_length": 4,
     "groq": {
         "keys": [],
         "stt_model": "whisper-large-v3",
@@ -185,6 +189,19 @@ class App(tk.Tk):
 
     def minimize_to_tray(self):
         """Hide window and remove from taskbar completely."""
+        if not self.settings.get("_tray_hint_shown", False):
+            from tkinter import messagebox
+            messagebox.showinfo(
+                "Свернуто в трей",
+                "Приложение свернулось в системный трей (область уведомлений).\n\n"
+                "Горячие клавиши продолжают работать!\n\n"
+                "Чтобы открыть окно: двойной клик по иконке в трее.\n"
+                "Чтобы закрыть: правый клик по иконке > Выход.\n\n"
+                "Это сообщение больше не появится.",
+                parent=self,
+            )
+            self.settings["_tray_hint_shown"] = True
+            self.save()
         self.withdraw()
         # On Windows: remove WS_EX_APPWINDOW so it disappears from taskbar
         try:

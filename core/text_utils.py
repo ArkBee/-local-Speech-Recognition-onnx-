@@ -47,6 +47,9 @@ def process_transcription(
     text: str,
     *,
     fuzzy_numeric: bool = False,
+    fuzzy_cutoff: float = 0.85,
+    min_fuzzy_length: int = 4,
+    replace_punctuation: bool = True,
     collapse_full_repeat: bool = False,
 ) -> str:
     if not text:
@@ -66,8 +69,8 @@ def process_transcription(
         num = None
         if fuzzy_numeric:
             num = NUMERIC_VARIANTS.get(wl)
-            if num is None and len(wl) >= 4:
-                close = get_close_matches(wl, numeric_keys, n=1, cutoff=0.85)
+            if num is None and len(wl) >= min_fuzzy_length:
+                close = get_close_matches(wl, numeric_keys, n=1, cutoff=fuzzy_cutoff)
                 if close:
                     num = NUMERIC_VARIANTS.get(close[0])
         else:
@@ -75,7 +78,7 @@ def process_transcription(
 
         if num is not None:
             result.append(num)
-        elif wl in WORD_TO_PUNCTUATION_MAP:
+        elif replace_punctuation and wl in WORD_TO_PUNCTUATION_MAP:
             if result:
                 result[-1] += WORD_TO_PUNCTUATION_MAP[wl]
             else:

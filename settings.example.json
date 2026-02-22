@@ -18,6 +18,10 @@
     "injection_mode": "clipboard",
     "injection_delay": 0.3,
     "enable_replacements": true,
+    "fuzzy_numeric": true,
+    "replace_punctuation": true,
+    "fuzzy_cutoff": 0.85,
+    "min_fuzzy_length": 4,
     "groq": {
         "keys": [
             "gsk_YOUR_KEY_HERE"
