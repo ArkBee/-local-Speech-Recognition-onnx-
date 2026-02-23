@@ -100,7 +100,7 @@ class MultiHotkeyManager:
             else:
                 self._pressed.discard(raw)
 
-            # Check if active slot should deactivate
+            # Check if active slot should deactivate or upgrade
             if self._active_slot:
                 if not self._active_slot.required.issubset(self._pressed):
                     slot = self._active_slot
@@ -109,7 +109,22 @@ class MultiHotkeyManager:
                         slot.on_deactivate(slot.pipeline)
                     except Exception:
                         logger.exception("Error in on_deactivate for '%s'", slot.name)
-                return  # Don't activate another while one is active
+                else:
+                    # Still active — check if a more specific slot now matches
+                    # (e.g. ctrl+shift was active, now ctrl+shift+alt is pressed)
+                    if event.event_type == keyboard.KEY_DOWN:
+                        for slot in self._sorted_slots():
+                            if (
+                                slot.required.issubset(self._pressed)
+                                and len(slot.required) > len(self._active_slot.required)
+                            ):
+                                logger.info(
+                                    "Upgrading hotkey '%s' -> '%s'",
+                                    self._active_slot.name, slot.name,
+                                )
+                                self._active_slot = slot
+                                break
+                    return  # Don't activate another while one is active
 
             # No active slot — try to activate (most specific first)
             for slot in self._sorted_slots():
