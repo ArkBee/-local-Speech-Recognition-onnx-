@@ -1,4 +1,5 @@
 import logging
+import sys
 import threading
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Set
@@ -6,6 +7,29 @@ from typing import Callable, Dict, List, Optional, Set
 import keyboard
 
 logger = logging.getLogger(__name__)
+
+_WIN_KEY_NAMES = {"windows", "left windows", "right windows", "win", "left win", "right win"}
+
+
+def _suppress_start_menu():
+    """Inject a phantom F15 key event so Windows doesn't open the Start menu
+    when the Win key is released as part of a hotkey combo.
+
+    Windows opens Start menu when Win is pressed-and-released without any other
+    key in between. Sending a harmless key while Win is still held breaks that
+    pattern. F15 is a valid VK but virtually never bound to anything.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        VK_F15 = 0x7E
+        KEYEVENTF_KEYUP = 0x0002
+        user32 = ctypes.windll.user32
+        user32.keybd_event(VK_F15, 0, 0, 0)
+        user32.keybd_event(VK_F15, 0, KEYEVENTF_KEYUP, 0)
+    except Exception:
+        logger.exception("Failed to inject phantom key for Win suppression")
 
 # Pipeline modes triggered by each hotkey slot
 PIPELINE_RAW = "raw"                # recognize -> paste
@@ -94,47 +118,54 @@ class MultiHotkeyManager:
         if not raw:
             return
 
+        is_down = event.event_type == keyboard.KEY_DOWN
+        deactivated_slot: Optional[HotkeySlot] = None
+        activated_slot: Optional[HotkeySlot] = None
+
         with self._lock:
-            if event.event_type == keyboard.KEY_DOWN:
+            if is_down:
                 self._pressed.add(raw)
             else:
                 self._pressed.discard(raw)
 
-            # Check if active slot should deactivate or upgrade
+            # Deactivation: any key release that breaks the active combo.
+            # No auto-upgrade, no fall-through to a smaller slot — releases
+            # NEVER start a new recording.
             if self._active_slot:
                 if not self._active_slot.required.issubset(self._pressed):
-                    slot = self._active_slot
+                    deactivated_slot = self._active_slot
                     self._active_slot = None
-                    try:
-                        slot.on_deactivate(slot.pipeline)
-                    except Exception:
-                        logger.exception("Error in on_deactivate for '%s'", slot.name)
-                else:
-                    # Still active — check if a more specific slot now matches
-                    # (e.g. ctrl+shift was active, now ctrl+shift+alt is pressed)
-                    if event.event_type == keyboard.KEY_DOWN:
-                        for slot in self._sorted_slots():
-                            if (
-                                slot.required.issubset(self._pressed)
-                                and len(slot.required) > len(self._active_slot.required)
-                            ):
-                                logger.info(
-                                    "Upgrading hotkey '%s' -> '%s'",
-                                    self._active_slot.name, slot.name,
-                                )
-                                self._active_slot = slot
-                                break
-                    return  # Don't activate another while one is active
+                # else: still active, slot stays as-is (no upgrade).
+            elif is_down:
+                # Only KEY_DOWN events can activate a slot. Pick the most
+                # specific combo that fully matches the currently held keys.
+                for slot in self._sorted_slots():
+                    if slot.required.issubset(self._pressed):
+                        self._active_slot = slot
+                        activated_slot = slot
+                        break
 
-            # No active slot — try to activate (most specific first)
-            for slot in self._sorted_slots():
-                if slot.required.issubset(self._pressed):
-                    self._active_slot = slot
-                    try:
-                        slot.on_activate()
-                    except Exception:
-                        logger.exception("Error in on_activate for '%s'", slot.name)
-                    return
+        # Callbacks fire OUTSIDE the lock so recorder.stop()/start() can't
+        # block subsequent keyboard events.
+        if deactivated_slot is not None:
+            try:
+                deactivated_slot.on_deactivate(deactivated_slot.pipeline)
+            except Exception:
+                logger.exception(
+                    "Error in on_deactivate for '%s'", deactivated_slot.name
+                )
+
+        if activated_slot is not None:
+            # If the combo includes Win, inject a phantom key so the Start
+            # menu doesn't pop when the user releases Win last.
+            if activated_slot.required & _WIN_KEY_NAMES:
+                _suppress_start_menu()
+            try:
+                activated_slot.on_activate()
+            except Exception:
+                logger.exception(
+                    "Error in on_activate for '%s'", activated_slot.name
+                )
 
     def start(self):
         if self._hook_installed:
